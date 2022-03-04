@@ -1,0 +1,259 @@
+#!/bin/bash
+
+function join_by() {
+  local d=$1
+  shift
+  echo -n "$1"
+  shift
+  printf "%s" "${@/#/$d}"
+}
+
+function isURL() {
+  local value=$1
+
+  if [[ ${value:0:8} == "https://" || ${value:0:7} == "http://" || ${value:0:6} == "ftp://" ]]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+function isValidFileURL() {
+  suffix=${1:?Missing required suffix arg}
+  url=${2:?Missing required url arg}
+
+  [[ "$url" == http*://*.${suffix} || "$url" == http*://*.${suffix}\?* ]]
+}
+
+function resolveEffectiveUrl() {
+  url="${1:?Missing required url argument}"
+  if ! curl -Ls -o /dev/null -w %{url_effective} "$url"; then
+    log "ERROR failed to resolve effective URL from $url"
+    exit 2
+  fi
+}
+
+function getFilenameFromUrl() {
+  url="${1:?Missing required url argument}"
+  strippedOfQuery="${url%\?*}"
+  basename "$strippedOfQuery"
+}
+
+function isTrue() {
+  local oldState
+  oldState=$(shopt -po xtrace)
+  shopt -u -o xtrace
+
+  local value=${1,,}
+
+  result=
+
+  case ${value} in
+  true | on)
+    result=0
+    ;;
+  *)
+    result=1
+    ;;
+  esac
+
+  eval "$oldState"
+  return ${result}
+}
+
+function isDebugging() {
+  if isTrue "${DEBUG:-false}"; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+function handleDebugMode() {
+  if isDebugging; then
+    set -x
+    extraCurlArgs=(-v)
+  fi
+}
+
+function debug() {
+  if isDebugging; then
+    log "DEBUG: $*"
+  fi
+}
+
+function logn() {
+  echo -n "[init] $*"
+}
+
+function log() {
+  local oldState
+  # The  return  status  when listing options is zero if all optnames are enabled, non- zero otherwise.
+  oldState=$(shopt -po xtrace || true)
+  shopt -u -o xtrace
+
+  if isDebugging || isTrue "${LOG_TIMESTAMP:-false}"; then
+    ts=" $(date --rfc-3339=seconds)"
+  else
+    ts=
+  fi
+  echo "[init]${ts} $*"
+  eval "$oldState"
+}
+
+function logAutopause() {
+  echo "[Autopause loop] $*"
+}
+
+function logAutopauseAction() {
+  echo "[$(date -Iseconds)] [Autopause] $*"
+}
+
+function logAutostop() {
+  echo "[Autostop loop] $*"
+}
+
+function logAutostopAction() {
+  echo "[$(date -Iseconds)] [Autostop] $*"
+}
+
+function logRcon() {
+  echo "[Rcon loop] $*"
+}
+
+function normalizeMemSize() {
+  local scale=1
+  case ${1,,} in
+  *k)
+    scale=1024
+    ;;
+  *m)
+    scale=1048576
+    ;;
+  *g)
+    scale=1073741824
+    ;;
+  esac
+
+  val=${1:0:-1}
+  echo $((val * scale))
+}
+
+requireVar() {
+  if [ ! -v $1 ]; then
+    log "ERROR: $1 is required to be set"
+    exit 1
+  fi
+  if [ -z "${!1}" ]; then
+    log "ERROR: $1 is required to be set"
+    exit 1
+  fi
+}
+
+requireEnum() {
+  var=${1?}
+  shift
+
+  for allowed in $*; do
+    if [[ ${!var} = $allowed ]]; then
+      return 0
+    fi
+  done
+
+  log "ERROR: $var must be set to one of $*"
+#  exit 1
+}
+
+function writeEula() {
+  if ! echo "# Generated via Docker
+# $(date)
+eula=${EULA,,}
+" >/data/eula.txt; then
+    log "ERROR: unable to write eula to /data. Please make sure attached directory is writable by uid=${UID}"
+    exit 2
+  fi
+}
+
+function removeOldMods {
+  if [ -d "$1" ]; then
+    find "$1" -mindepth 1 -maxdepth ${REMOVE_OLD_MODS_DEPTH:-16} -wholename "${REMOVE_OLD_MODS_INCLUDE:-*}" -not -wholename "${REMOVE_OLD_MODS_EXCLUDE:-}" -delete
+  fi
+}
+
+function get() {
+  local flags=()
+  if isTrue "${DEBUG_GET:-false}"; then
+    flags+=("--debug")
+  fi
+  mc-image-helper "${flags[@]}" get "$@"
+}
+
+function isFamily() {
+  for f in "${@}"; do
+    if [[ ${FAMILY^^} == "${f^^}" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+function isType() {
+  for t in "${@}"; do
+    # shellcheck disable=SC2153
+    if [[ $TYPE == "$t" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+#function evaluateJavaCompatibilityForForge() {
+#  javaRelease=$(mc-image-helper java-release)
+#  if versionLessThan 1.18 && (( javaRelease > 8 )); then
+#    log "**********************************************************************"
+#    log "WARNING: Some mods and modpacks may require Java 8."
+#    log "         Please use itzg/minecraft-server:java8"
+#    log "**********************************************************************"
+#    sleep 5
+#  fi
+#}
+
+function extract() {
+  src=${1?}
+  destDir=${2?}
+
+  type=$(file -b --mime-type "${src}")
+  case "${type}" in
+    application/zip)
+      unzip -q -d "${destDir}" "${src}"
+      ;;
+    application/x-tar|application/gzip|application/x-gzip|application/x-bzip2|application/zstd|application/x-zstd)
+      tar -C "${destDir}" -xf "${src}"
+      ;;
+    *)
+      log "ERROR: unsupported archive type: $type"
+      return 1
+      ;;
+  esac
+}
+
+function getDistro() {
+  cat /etc/os-release | grep -E "^ID=" | cut -d= -f2 | sed -e 's/"//g'
+}
+
+function checkSum() {
+  local sum_file=${1?}
+
+  # Get distro
+  distro=$(getDistro)
+
+  if [ "${distro}" == "debian" ] && sha1sum -c "${sum_file}" --status 2> /dev/null; then
+    return 0
+  elif [ "${distro}" == "ubuntu" ] && sha1sum -c "${sum_file}" --status 2> /dev/null; then
+    return 0
+  elif [ "${distro}" == "alpine" ] && sha1sum -c "${sum_file}" -s 2> /dev/null; then
+    return 0
+  else
+    return 1
+  fi
+}
