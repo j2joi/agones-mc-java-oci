@@ -2,7 +2,7 @@
 
 #export VANILLA_VERSION="latest"
 #export SERVER="minecraft_server.${VANILLA_VERSION// /_}.jar"
-export SERVER=mcserverping-1.0.5.jar
+#export SERVER=mcserverping-1.0.5.jar
 
 # shellcheck source=start-utils
 . "${SCRIPTS:-/}start-utils"
@@ -230,7 +230,7 @@ else
     $JVM_XX_OPTS
     $JVM_OPTS
     $expandedDOpts
-    -jar "$SERVER"
+    #-jar "$SERVER"
     #"$SERVER"
     #dev.agones.cmd.Monitor
     "$@" $EXTRA_ARGS
@@ -249,6 +249,7 @@ else
   log "classpath $CPATH"
   log "PWD: $PWD"
   log "java CMD: java -classpath ${CPATH}. ${finalArgs[@]}"
+  #exec java -classpath "/libs/*:." "${finalArgs[@]}"
   exec java -classpath "/libs/*:." "${finalArgs[@]}"
 
 

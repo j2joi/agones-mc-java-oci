@@ -34,6 +34,9 @@ COMMIT := $(shell git rev-parse --short HEAD)
 IMAGE_VERSION := $(shell set -o pipefail; git describe --exact-match --tags HEAD 2> /dev/null | cut -c 2- || echo ${COMMIT})
 BUILD_FLAGS ?= -v
 ARCH ?= amd64
+#GOOGLE_APPLICATION_CREDENTIALS := $(HOME)/.config/gcloud/application_default_credentials.json
+
+
 # import deploy config
 # You can change the default deploy config with `make cnf="deploy_special.env" release`
 dpl ?= env/deploy.env
@@ -42,6 +45,16 @@ export $(shell sed 's/=.*//' $(dpl))
 
 IMAGE_LOCAL := ${BINARY}
 IMAGE_REMOTE := ${DOCKER_REPO}/$(NAMESPACE)/$(CONTAINER)/$(BINARY)
+
+# HELP
+# This will output the help for each task
+# thanks to https://marmelab.com/blog/2016/02/29/auto-documented-makefile.html
+.PHONY: help
+
+help: ## This help.
+	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+
+.DEFAULT_GOAL := help
 
 #### Build Java Monitor App ##########
 build.app: clean package
@@ -57,16 +70,42 @@ version-bump:
 	@echo setting next version: $(NEXT_VERSION_SNP)
 	@ $(MVN) versions:set -DgenerateBackupPoms=false -DnewVersion=$(NEXT_VERSION_SNP)
 
+version-release:
+	@echo setting release version: $(RELEASE_VERSION_NSNP)
+	@ $(MVN) versions:set -DgenerateBackupPoms=false -DnewVersion=$(RELEASE_VERSION_NSNP)
+
+update-versions:
+	@ $(MVN) versions:update-properties
+
 
 JAR_NAME="$(APP_NAME)-$(RELEASE_VERSION)-SNAPSHOT.jar"
 ###### Build Docker image ###
 build.docker:
 	docker build --rm --tag $(IMAGE_LOCAL):$(IMAGE_VERSION) --build-arg JAVA_APP=$(JAR_NAME) --build-arg ARCH=$(ARCH) .
 
+inspect.docker: ## run an interactive bash session in the container
+	docker inspect $(IMAGE_LOCAL):$(IMAGE_VERSION)
+
+
+shell.docker: ## run an interactive bash session in the container
+	docker run -it $(IMAGE_LOCAL):$(IMAGE_VERSION) $(JAR_NAME) ls /*.jar
+
 run: ## run the container
 	docker run $(IMAGE_LOCAL):$(IMAGE_VERSION)
 
-release: build.docker publish ## Make a release by building and publishing the `{version}` ans `latest` tagged containers to ECR
+clean.docker: stop delete-containers delete-images
+
+stop:
+	-docker container stop $(shell docker container ls -q --filter name=$(IMAGE_LOCAL))
+
+delete-containers:
+	-docker rm $(shell docker ps -a -q --filter name=$(IMAGE_LOCAL))
+
+delete-images:
+	@ echo deleting images with strings $(IMAGE_LOCAL)
+	-docker rmi $(shell docker images -q $(IMAGE_LOCAL)) -f
+
+release: build-nc.docker publish ## Make a release by building and publishing the `{version}` ans `latest` tagged containers to ECR
 
 # Docker publish
 publish: repo-login publish-latest publish-version ## Publish the `{version}` and `latest` tagged images to OCIR
@@ -78,7 +117,7 @@ publish-latest: tag-latest ## Publish the `latest` taged container to ECR
 
 publish-version: tag-version ## Publish the `{version}` taged container to ECR
 	@echo 'publish $(VERSION) to $(DOCKER_REPO)'
-	$(DOCKER) push $(IMAGE_REMOTE):$(RELEASE_VERSION)
+	$(DOCKER) push $(IMAGE_REMOTE):$(IMAGE_VERSION)
 
 # Docker tagging
 tag: tag-latest tag-version ## Generate container tags for the `{version}` ans `latest` tags
@@ -89,7 +128,7 @@ tag-latest: ## Generate container `{version}` tag
 
 tag-version: ## Generate container `latest` tag
 	@echo 'create tag $(VERSION)'
-	$(DOCKER) tag $(IMAGE_LOCAL):$(IMAGE_VERSION) $(IMAGE_REMOTE):$(RELEASE_VERSION)
+	$(DOCKER) tag $(IMAGE_LOCAL):$(IMAGE_VERSION) $(IMAGE_REMOTE):$(IMAGE_VERSION)
 
 # HELPERS
 

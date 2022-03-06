@@ -1,0 +1,5 @@
+#!/bin/bash
+cd /libs
+javac -classpath /libs/bungeecord-chat-1.16-R0.4.jar:/libs/converter-gson-2.8.2.jar:/libs/dnsjava-3.4.0.jar:/libs/gson-2.8.0.jar:/libs/guava-21.0.jar:/libs/lombok-1.18.20.jar:/libs/mc-monitor-agones-1.0.8-SNAPSHOT.jar:/libs/okhttp-3.14.9.jar:/libs/okio-1.17.2.jar:/libs/retrofit-2.8.2.jar:/libs/retrofit2-synchronous-adapter-0.5.0.jar:/libs/slf4j-api-1.7.30.jar:. TestMonitor.java
+mv TestMonitor.class dev/agones/cmd/
+java -classpath /libs/bungeecord-chat-1.16-R0.4.jar:/libs/converter-gson-2.8.2.jar:/libs/dnsjava-3.4.0.jar:/libs/gson-2.8.0.jar:/libs/guava-21.0.jar:/libs/lombok-1.18.20.jar:/libs/mc-monitor-agones-1.0.8-SNAPSHOT.jar:/libs/okhttp-3.14.9.jar:/libs/okio-1.17.2.jar:/libs/retrofit-2.8.2.jar:/libs/retrofit2-synchronous-adapter-0.5.0.jar:/libs/slf4j-api-1.7.30.jar:. dev.agones.cmd.TestMonitor
