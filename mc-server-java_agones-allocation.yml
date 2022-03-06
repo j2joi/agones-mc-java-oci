@@ -1,0 +1,11 @@
+apiVersion: "allocation.agones.dev/v1"
+kind: GameServerAllocation
+spec:
+  required:
+    # allocates 'Ready' GameServer with labels game: mc and edition: java
+    matchLabels:
+      game: mc-oci
+      edition: java
+  scheduling: Packed
+metadata:
+  generateName: 'mc-allocation-'
