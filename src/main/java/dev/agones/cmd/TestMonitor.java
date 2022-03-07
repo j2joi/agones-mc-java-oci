@@ -8,6 +8,11 @@ import dev.agones.AgonesSDK;
 import java.io.IOException;
 import java.time.Clock;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.ListIterator;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -18,6 +23,7 @@ public class TestMonitor {
     private static final int max_failed_health_checks=5;
     private static int current_failed_health_checks=0;
     private static Clock clock = Clock.systemDefaultZone();
+    //private static List<MCPingResponse.Player> connectedPlayers;
 
     public static void log(String message){
 
@@ -26,9 +32,9 @@ public class TestMonitor {
 
     public static void waitforEvent(int delay_time){
         try {
-            log("before waitForEvent "+delay_time);
+            //log("before waitForEvent "+delay_time);
             TimeUnit.SECONDS.sleep(delay_time);
-            log("after waitForEvent ");
+            //log("after waitForEvent ");
         } catch (InterruptedException ie) {
             log("Catch Exception "+ie.getMessage());
             Thread.currentThread().interrupt();
@@ -68,32 +74,56 @@ public class TestMonitor {
         log("GameServer WarmUpTim - Completed");
         for (int w=0; w <= retries; w++) {
             try {
-                log("Warm Up Ping");
-                reply = MCPing.getPing(options);
-                if (reply != null && reply.getPlayers().getMax() > 0) {
+                reply=MCPing.getPing(options);
+                int maxPlayers=Optional.ofNullable(reply.getPlayers().getMax()).orElse(-1);
+                if (maxPlayers > 0) {
                     isRunning = true;
-                    log("[ Initial Ping succeeded: No: Players:  "+ reply.getPlayers().getMax());
+                    log("[ Initial Ping succeeded: Max No. Players:  "+ maxPlayers);
+                    sdk.alpha().setCapacity(maxPlayers);
                     sdk.ready();
+                    w=retries+1;
                     break;
                 }
-            } catch (Exception e) {
+            } catch (IOException e) {
+                log("Warm Up Ping failed");
                 isRunning = false;
-            } finally {
-                waitforEvent(interval);
+            } catch (Exception catchAll){
+                catchAll.printStackTrace();
             }
+
+            // finally {
+            waitforEvent(interval);
+            //}
         }
         if (isRunning) {
             try {
                 log("GameServer Descriptions: " + reply.getDescription());
                 sdk.ready();
                 Runnable task1 = () -> {
-                    log("Running...Ping HealthCheck Task");
                     try {
-                        MCPing.getPing(options);
+                        MCPingResponse info=MCPing.getPing(options);
                         sdk.health();
+                        int mcConnectedPlayers=info.getPlayers().getOnline();
+                        log("Minecraft No. connected Players : "+mcConnectedPlayers);
+                        //Sync Players with Agones
+                        if (mcConnectedPlayers >0 ) {
+                            for (MCPingResponse.Player player : info.getPlayers().getSample()) {
+                                log("Player Connected from MC Server: " + player.getId());
+                                if (!sdk.alpha().isPlayerConnected(player.getId())) {
+                                    sdk.alpha().playerConnect(player.getId());
+                                    log("Player Connected: " + player.getId() + "added to Agones Players list.");
+                                }
+                            }
+                            log("Agones Reported Connected Players: "+Optional.ofNullable(sdk.alpha().getPlayerCount()).orElse(0));
+                        }else{
+
+                        }
                         current_failed_health_checks=0;
                     } catch (IOException e) {
                         log("Failed Health check");
+                        current_failed_health_checks++;
+                    } catch (NullPointerException notExpected){
+                        log("Failed Health check due to NullPointer"+ notExpected.getMessage());
                         current_failed_health_checks++;
                     }
                 };
@@ -116,6 +146,8 @@ public class TestMonitor {
             } catch (Exception e) {
                 e.printStackTrace();
             }
+        }else{
+            log("Server not Running..  Shutting down monitoring service...");
         }
     }
 }

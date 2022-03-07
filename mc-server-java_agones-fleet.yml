@@ -4,7 +4,7 @@ metadata:
   name: mc-oci-java
 spec:
   # the number of GameServers to keep Ready or Allocated in this Fleet
-  replicas: 2
+  replicas: 1
   # defines how GameServers are organised across the cluster.
   # "Packed" (default) is aimed at dynamic Kubernetes clusters, such as cloud providers, wherein we want to bin pack
   # resources
@@ -53,6 +53,8 @@ spec:
                   value: "TRUE"
                 - name: MAX_MEMORY
                   value: "3G"
+                - name: INIT_MEMORY
+                  value: "3G"
               imagePullPolicy: IfNotPresent
               volumeMounts:
                 - mountPath: /data # shared vol with mc-load and mc-backup
@@ -71,7 +73,7 @@ spec:
                   value: "10"
                 - name: WARMUP_TIME
                   value: "100"
-              imagePullPolicy: IfNotPresent
+              imagePullPolicy: always
 
             - name: mc-backup
               image: iad.ocir.io/idi2cuxxbkto/piday/agones-mc-oci:0.1.2
@@ -95,7 +97,7 @@ spec:
                   # Change the rcon password when exposing RCON port outside the pod
                 - name: ENVIRONMENT
                   value: "development"
-              imagePullPolicy: Always
+              imagePullPolicy: IfNotPresent
               volumeMounts:
                 - mountPath: /data # shared vol with mc-server
                   name: world-vol

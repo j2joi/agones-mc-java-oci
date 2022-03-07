@@ -34,6 +34,8 @@ spec:
               value: "TRUE"
             - name: MAX_MEMORY
               value: "3G"
+            - name: INIT_MEMORY
+              value: "3G"
           imagePullPolicy: IfNotPresent
           volumeMounts:
             - mountPath: /data # shared vol with mc-load and mc-backup
@@ -49,7 +51,7 @@ spec:
             - name: MC_TIMEOUT
               value: "10"
             - name: MAX_ATTEMPTS
-              value: "5"
+              value: "20"
             - name: WARMUP_TIME
               value: "60"
           imagePullPolicy: Always
@@ -76,7 +78,7 @@ spec:
               # Change the rcon password when exposing RCON port outside the pod
             - name: ENVIRONMENT
               value: "development"
-          imagePullPolicy: Always
+          imagePullPolicy: IfNotPresent
           volumeMounts:
             - mountPath: /data # shared vol with mc-server
               name: world-vol
