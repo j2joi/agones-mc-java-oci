@@ -89,7 +89,8 @@ tag-latest: ## Generate container `{version}` tag
 
 tag-version: ## Generate container `latest` tag
 	@echo 'create tag $(VERSION)'
-	$(DOCKER) tag $(IMAGE_LOCAL):$(IMAGE_VERSION) $(IMAGE_REMOTE):$(RELEASE_VERSION)
+	#$(DOCKER) tag $(IMAGE_LOCAL):$(IMAGE_VERSION) $(IMAGE_REMOTE):$(RELEASE_VERSION)
+	$(DOCKER) tag $(IMAGE_LOCAL):$(IMAGE_VERSION) $(IMAGE_REMOTE):pi0.1
 
 # HELPERS
 

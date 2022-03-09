@@ -8,50 +8,31 @@ import dev.agones.AgonesSDK;
 import java.io.IOException;
 import java.time.Clock;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.ListIterator;
-import java.util.Objects;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.Optional;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
-import java.time.LocalDateTime;
+import java.util.List;
 
 public class TestMonitor {
-    private static final int max_failed_health_checks=5;
-    private static int current_failed_health_checks=0;
-    private static Clock clock = Clock.systemDefaultZone();
-    //private static List<MCPingResponse.Player> connectedPlayers;
-
-    public static void log(String message){
-
-        System.out.println("[ "+clock.instant()+"] "+ message);
-    }
-
-    public static void waitforEvent(int delay_time){
-        try {
-            //log("before waitForEvent "+delay_time);
-            TimeUnit.SECONDS.sleep(delay_time);
-            //log("after waitForEvent ");
-        } catch (InterruptedException ie) {
-            log("Catch Exception "+ie.getMessage());
-            Thread.currentThread().interrupt();
-            log("Catch Exception after Interrupt ");
-        }
-    }
 
     public static void main(String[] args) {
 
         final ScheduledExecutorService executorService = Executors.newSingleThreadScheduledExecutor();
+        MCPingResponse reply = null;
+        MCPingOptions options;
+        boolean isRunning = false;
         log("Minecraft Java Monitor Starting...:"+TestMonitor.class.getCanonicalName());
         int mc_port = Integer.parseInt(System.getenv().getOrDefault("MC_PORT", "25565"));
         int ping_timeout = Integer.parseInt(System.getenv().getOrDefault("MC_TIMEOUT", "5000"));
         int interval = Integer.parseInt(System.getenv().getOrDefault("PING_INTERVAL", "5000"));
         int warmupTime = Integer.parseInt(System.getenv().getOrDefault("WARMUP_TIME", "60"));
         int retries = Integer.parseInt(System.getenv().getOrDefault("MAX_ATTEMPTS", "5"));
-        DateTimeFormatter dtf = DateTimeFormatter.ofPattern("uuuu/MM/dd HH:mm:ss");
+
+        /// ENV  Vars validation.
         log("- AGONES_SDK_PORT: "+System.getenv().get("AGONES_SDK_HTTP_PORT"));
         log("- MC_PORT: "+ System.getenv().get("MC_PORT"));
         log("- MC_TIMEOUT: "+ System.getenv().get("MC_TIMEOUT"));
@@ -59,19 +40,33 @@ public class TestMonitor {
         log("- WARMUP_TIME: "+ System.getenv().get("WARMUP_TIME"));
         log("- MAX_ATTEMPTS: "+ System.getenv().get("MAX_ATTEMPTS"));
         log("Init Agones SDK:");
-        AgonesSDK sdk = new AgonesSDK();
+
+/////////////// Steps /////////////
+// 1.  Init Agones
+// 2.  Build Minecraft Health check (MC Pinger)
+// 3.  Trigger two types of Health checks
+//        (a)  Ready ():  MC Container UP and Running  -- Mark Kubernetes Pod Status to Ready through Agones SDK ready()
+//        (b)  Healh checks (): MC APP is healty  -->   Update Agones Service by running health checks  adn update health()
+//              i.   Sync Players Minecraft and Agones Platform
+
+////////////////////////////
+//1, 2.  Init Agones SDK, Minecraft Pinger
+////////////////////////////
+        sdk = new AgonesSDK();
         log("Agones SDK Initialized");
-        MCPingResponse reply = null;
-        MCPingOptions options;
+
         options = MCPingOptions.builder()
                 .hostname("localhost")
                 .port(mc_port)
                 .timeout(ping_timeout)
                 .build();
-        boolean isRunning = false;
         log("GameServer Initiating...");
         waitforEvent(warmupTime);
         log("GameServer WarmUpTim - Completed");
+///////////////////////////
+// 3. (a)     Ready ():  MC Container UP and Running  -- Mark Kubernetes Pod Status to Ready through Agones SDK ready()
+//////////////////////////
+
         for (int w=0; w <= retries; w++) {
             try {
                 reply=MCPing.getPing(options);
@@ -88,17 +83,19 @@ public class TestMonitor {
                 log("Warm Up Ping failed");
                 isRunning = false;
             } catch (Exception catchAll){
-                catchAll.printStackTrace();
+                log("Something Unexpected happened."+ catchAll.getMessage());
+                //catchAll.printStackTrace();
             }
-
-            // finally {
             waitforEvent(interval);
-            //}
+
         }
+///////////////////////////
+// 3. (b)   Healh checks (): MC APP is healty  -->   Update Agones Service by running health checks  adn update health()
+//////////////////////////
         if (isRunning) {
             try {
                 log("GameServer Descriptions: " + reply.getDescription());
-                sdk.ready();
+                //sdk.ready();
                 Runnable task1 = () -> {
                     try {
                         MCPingResponse info=MCPing.getPing(options);
@@ -106,18 +103,13 @@ public class TestMonitor {
                         int mcConnectedPlayers=info.getPlayers().getOnline();
                         log("Minecraft No. connected Players : "+mcConnectedPlayers);
                         //Sync Players with Agones
-                        if (mcConnectedPlayers >0 ) {
-                            for (MCPingResponse.Player player : info.getPlayers().getSample()) {
-                                log("Player Connected from MC Server: " + player.getId());
-                                if (!sdk.alpha().isPlayerConnected(player.getId())) {
-                                    sdk.alpha().playerConnect(player.getId());
-                                    log("Player Connected: " + player.getId() + "added to Agones Players list.");
-                                }
-                            }
-                            log("Agones Reported Connected Players: "+Optional.ofNullable(sdk.alpha().getPlayerCount()).orElse(0));
-                        }else{
-
+                        if (!gameStarted && mcConnectedPlayers>0) {
+                            //Mark game server as allocated.  Can't be autoscaled.
+                            gameStarted=true;
+                            sdk.allocate();
                         }
+                        syncPlayers(sdk.alpha().getConnectedPlayers(),info.getPlayers().getSample());
+                        log("Agones Reported Connected Players: "+Optional.ofNullable(sdk.alpha().getPlayerCount()).orElse(0));
                         current_failed_health_checks=0;
                     } catch (IOException e) {
                         log("Failed Health check");
@@ -125,8 +117,16 @@ public class TestMonitor {
                     } catch (NullPointerException notExpected){
                         log("Failed Health check due to NullPointer"+ notExpected.getMessage());
                         current_failed_health_checks++;
+                    }catch (Exception unexpected){
+                        log(":-(  crashed! "+ unexpected.getMessage());
+                        unexpected.printStackTrace();
+
                     }
                 };
+
+////////////////////////////////////////////////////
+//Keep watching for healthcheck results or shutdown
+////////////////////////////////////////////////////
                 ScheduledFuture<?> scheduledFuture = executorService.scheduleAtFixedRate(task1, 0, 2, TimeUnit.SECONDS);
                 log("Health Started...");
                 while(isRunning) {
@@ -150,5 +150,49 @@ public class TestMonitor {
             log("Server not Running..  Shutting down monitoring service...");
         }
     }
-}
+    /*****************
+     ////////////////////////////////////////////////////////////
+     //  UTILS
+     // ////////////////////////////////////////////////////////
+     */
+    public static void syncPlayers(List<String> agonesSDKPlayers, List<MCPingResponse.Player> mcPlayers) throws IOException,NullPointerException{
+        //agonesSDKPlayers=Optional.ofNullable(agonesSDKPlayers);
+        agonesSDKPlayers=Optional.ofNullable (agonesSDKPlayers).orElse(Collections.emptyList());
+        mcPlayers=Optional.ofNullable(mcPlayers).orElse(Collections.emptyList());
 
+        //Remove metadata of all  Players in Agones
+        log("about to remove all connected players from SDK");
+        for (String player : agonesSDKPlayers)
+            sdk.alpha().playerDisconnect(player);
+
+        log("Players stats removed");
+        //Update playersMetada with connected players in Minecraft
+        for (MCPingResponse.Player player : mcPlayers) {
+            sdk.alpha().playerConnect(player.getId());
+            log("Player Metadata : " + player.getId() + " appended to Agones Players list.");
+        }
+    }
+    public static void log(String message){
+        System.out.println("[ "+clock.instant()+"] "+ message);
+    }
+
+    public static void waitforEvent(int delay_time){
+        try {
+            //log("before waitForEvent "+delay_time);
+            TimeUnit.SECONDS.sleep(delay_time);
+            //log("after waitForEvent ");
+        } catch (InterruptedException ie) {
+            log("Catch Exception "+ie.getMessage());
+            Thread.currentThread().interrupt();
+            log("Catch Exception after Interrupt ");
+        }
+    }
+
+    ////////////////////////////////////////
+    private static final int max_failed_health_checks=5;
+    private static int current_failed_health_checks=0;
+    private static Clock clock = Clock.systemDefaultZone();
+    private static boolean gameStarted =false;
+    private static AgonesSDK sdk;
+
+}

@@ -3,45 +3,29 @@ kind: Fleet
 metadata:
   name: mc-oci-java
 spec:
-  # the number of GameServers to keep Ready or Allocated in this Fleet
-  replicas: 1
-  # defines how GameServers are organised across the cluster.
-  # "Packed" (default) is aimed at dynamic Kubernetes clusters, such as cloud providers, wherein we want to bin pack
-  # resources
+  replicas: 2
   scheduling: Packed
   strategy:
-    # "Recreate" terminates all non-allocated GameServers, and starts up a new set with the new details to replace them.
     type: Recreate
   template:
-    # GameServer metadata
     metadata:
       labels:
-        # GameServer lablel to match with GameServerAllocation
         game: mc-oci
         edition: java
       annotations:
-        external-dns.alpha.kubernetes.io/hostname: <DOMAIN>
+        external-dns.alpha.kubernetes.io/hostname: piday.com
         external-dns.alpha.kubernetes.io/gameserver-service: minecraft
     spec:
       container: mc-server # Minecraft server container name
       ports:
         - name: mc-oci
-          # "Dynamic" (default) the system allocates a free hostPort for the gameserver (default 7000-8000), for game clients to connect to
           portPolicy: Dynamic
-          # The name of the container to open the port on. Defaults to the game server container if omitted or empty.
           container: mc-server
-          # the port that is being opened on the game server process
           containerPort: 25565
-          # Minecraft uses TCP to connect players
           protocol: TCP
-      # Health checking for the running game server
       health:
-        # Number of seconds after the container has started before health check is initiated.
         initialDelaySeconds: 300
-        # If the `Health()` function doesn't get called at least once every period (seconds), then
-        # the game server is not healthy.
         periodSeconds: 12
-        # Minimum consecutive failures for the health probe to be considered failed after having succeeded.
         failureThreshold: 5
       template:
         spec:
@@ -70,10 +54,10 @@ spec:
                 - name: MC_TIMEOUT
                   value: "10"
                 - name: MAX_ATTEMPTS
-                  value: "10"
+                  value: "20"
                 - name: WARMUP_TIME
                   value: "100"
-              imagePullPolicy: always
+              imagePullPolicy: Always
 
             - name: mc-backup
               image: iad.ocir.io/idi2cuxxbkto/piday/agones-mc-oci:0.1.2
@@ -103,6 +87,6 @@ spec:
                   name: world-vol
 
           volumes:
-            - name: world-vol # shared vol between containers. will not persist bewteen restarts
+            - name: world-vol # shared vol between containers. will not persist between restarts
           imagePullSecrets:
             - name: ocirsecret    
