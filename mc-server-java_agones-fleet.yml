@@ -60,7 +60,7 @@ spec:
               imagePullPolicy: Always
 
             - name: mc-backup
-              image: iad.ocir.io/idi2cuxxbkto/piday/agones-mc-oci:0.1.2
+              image: iad.ocir.io/idi2cuxxbkto/piday/mc-oci-backup:latest
               args:
                 - backup
               env:
