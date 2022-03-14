@@ -71,10 +71,10 @@ build.docker:
 run: ## run the container
 	docker run $(IMAGE_LOCAL):$(IMAGE_VERSION)
 
-release: build.docker publish ## Make a release by building and publishing the `{version}` ans `latest` tagged containers to ECR
+release.monitor: build.docker publish.monitor ## Make a release by building and publishing the `{version}` ans `latest` tagged containers to ECR
 
 # Docker publish
-publish: repo-login publish-latest publish-version ## Publish the `{version}` and `latest` tagged images to OCIR
+publish.monitor: repo-login publish-latest publish-version ## Publish the `{version}` and `latest` tagged images to OCIR
 
 publish-latest: tag-latest ## Publish the `latest` taged container to ECR
 	@echo 'publish latest to $(DOCKER_REPO)'

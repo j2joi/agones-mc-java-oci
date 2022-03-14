@@ -3,7 +3,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>piday.com</groupId>
     <artifactId>mc-monitor-agones</artifactId>
-    <version>1.0.17-SNAPSHOT</version>
+    <version>1.0.18-SNAPSHOT</version>
     <packaging>jar</packaging>
     <name>MCMonitor</name>
     <properties>
@@ -26,6 +26,7 @@
                         </manifest>
                     </archive>
                     <outputDirectory>${project.build.directory}/libs/</outputDirectory>
+                    <!--suppress UnresolvedMavenProperty -->
                     <finalName>${mcBinaryVersion}-${project.version}</finalName>
                 </configuration>
             </plugin>
