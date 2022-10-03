@@ -71,7 +71,7 @@ func RunBackup(cfg config.BackupConfig) error {
 		logger.Warn("error saving world. skipping save-all", zap.Error(err))
 	}
 
-	// Authenticate and create Google Cloud Storage client
+	// Authenticate and create Oracle Storage client
 	cloudStorageClient, err := oracle.New(context.Background(), cfg.GetBucketName())
 	if err != nil {
 		logger.Error("error connecting to bucket", zap.Error(err))
